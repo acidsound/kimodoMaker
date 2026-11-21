@@ -3,6 +3,7 @@ import { Motion } from './motion.js';
 import { Viewer } from './viewer.js';
 
 const el = Object.fromEntries([...document.querySelectorAll('[id]')].map((node) => [node.id, node]));
+const API_BASE = import.meta.env.VITE_API_BASE || '';
 const text = {
   queued: '대기 중', loading: 'Kimodo 모델 로드 중', generating: 'Kimodo 추론 중',
   exporting: '파일 저장 중', ready: '생성 완료', failed: '생성 실패',
@@ -45,7 +46,7 @@ try {
 }
 
 async function api(url, options) {
-  const response = await fetch(url, options);
+  const response = await fetch(API_BASE + url, options);
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
   return data;
@@ -126,7 +127,7 @@ async function selectTake(take, manual = false) {
   }
   for (const format of ['json', 'bvh', 'npz']) {
     const link = document.createElement('a');
-    link.href = takeUrl(take.id, format) + '?download=1';
+    link.href = API_BASE + takeUrl(take.id, format) + '?download=1';
     link.textContent = format.toUpperCase();
     link.setAttribute('aria-label', `${link.textContent} 내려받기`);
     el.exports.append(link);

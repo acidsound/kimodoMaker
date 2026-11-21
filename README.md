@@ -2,17 +2,26 @@
 
 프롬프트로 Kimodo 모션을 생성하고 브라우저에서 SOMA 스켈레톤과 내 VRM에 적용해 보는 로컬 작업 도구다. 테이크별로 프롬프트, 길이, 추론 스텝, 시드와 제약을 보관한다. 설정을 다시 불러오거나 시드를 비워 다른 결과를 뽑을 수 있다.
 
+## 구조
+
+프론트엔드와 백엔드가 나뉘어 있다.
+
+- `backend/` — Python API 서버. `server.py`가 `/api` 엔드포인트만 제공하고 `engine.py`로 GPU 추론을 돌린다. 테이크는 `backend/takes/`에 저장된다.
+- `frontend/` — Vite + three.js 편집기. 빌드 결과는 `frontend/dist/`에 나온다.
+
+프론트엔드는 기본적으로 같은 origin의 `/api`를 호출한다. 개발 중에는 Vite가 `/api`를 로컬 백엔드로 전달하고, 분리된 origin에서 서빙할 때는 환경 변수 `VITE_API_BASE`로 백엔드 주소를 지정한다.
+
 ## 실행
 
 NVIDIA GPU와 CUDA용 PyTorch, Node.js 22.12 이상, Python 3.10 이상이 필요하다. Kimodo의 모션 후처리 모듈은 C++ 컴파일러와 CMake로 빌드한다.
 
-### Windows 네이티브
+### 백엔드 (Windows 네이티브)
 
 Kimodo의 빌드 스크립트에 Windows 경로가 있다. 아래는 Python 3.10.11과 Visual Studio 2022 기준이다. Visual Studio Build Tools의 **C++를 사용한 데스크톱 개발** 워크로드와 Windows SDK를 설치하고 PowerShell을 연다. 다른 Visual Studio 버전을 쓰면 `cmake --help`에 나온 해당 버전의 생성기 이름을 사용한다. CMake는 Eigen과 pybind11을 찾지 못하면 내려받는다.
 
 ```powershell
 git clone https://github.com/acidsound/kimodoMaker.git
-cd kimodoMaker
+cd kimodoMaker/backend
 py -3.10 -m venv .venv
 $python = ".\.venv\Scripts\python.exe"
 & $python -m pip install torch==2.10.0 --index-url https://download.pytorch.org/whl/cu128
@@ -27,19 +36,19 @@ $env:CMAKE_GENERATOR = "Visual Studio 17 2022"
 
 ```powershell
 .\.venv\Scripts\hf.exe auth login
-npm.cmd ci
-npm.cmd run build
 $env:TEXT_ENCODER_MODE = "local"
-& $python server.py
+& $python server.py --host 127.0.0.1 --port 8765
 ```
+
+`--host 0.0.0.0`을 주면 LAN 등 원격 접속을 허용한다. 첫 생성에서 모델과 텍스트 인코더를 내려받고 이후에는 서버가 모델을 재사용한다. NVIDIA의 [Kimodo 빠른 시작](https://research.nvidia.com/labs/sil/projects/kimodo/docs/getting_started/quick_start.html)은 모델과 텍스트 인코더를 GPU에서 함께 실행할 때 약 17 GB의 VRAM이 필요하다고 안내한다. VRAM이 부족하면 서버 실행 전에 환경 변수 `TEXT_ENCODER_DEVICE`를 `cpu`로 설정해 텍스트 인코더를 CPU로 옮길 수 있다.
 
 Windows 네이티브 환경(RTX 4090, torch 2.10.0+cu128, 로컬 LLM2Vec 텍스트 인코더)에서 모델 로드부터 모션 생성, 파일 내보내기까지 전체 흐름을 확인했다. Llama 3 8B 기반이라 모델 접근 권한은 필수이고 권한 승인 후에는 별도 설정 없이 내려받기가 진행된다.
 
-### Linux / Ubuntu WSL2
+### 백엔드 (Linux / Ubuntu WSL2)
 
 ```bash
 git clone https://github.com/acidsound/kimodoMaker.git
-cd kimodoMaker
+cd kimodoMaker/backend
 sudo apt install build-essential cmake libeigen3-dev python3-dev python3-venv
 python3 -m venv .venv
 source .venv/bin/activate
@@ -47,33 +56,56 @@ source .venv/bin/activate
 
 1. [PyTorch 설치 페이지](https://pytorch.org/get-started/locally/)에서 Linux용 CUDA 빌드를 선택하고 가상 환경에 설치한다. `python -c "import torch; print(torch.cuda.is_available())"`가 `True`여야 한다.
 2. Hugging Face에서 [Meta Llama 3 8B Instruct](https://huggingface.co/meta-llama/Meta-Llama-3-8B-Instruct) 접근 권한을 얻고 읽기 토큰을 준비한다.
-3. 가상 환경을 활성화한 상태로 아래 명령을 실행한다.
 
 ```bash
 python -m pip install -r requirements.txt
 hf auth login
-npm ci
-npm run build
 TEXT_ENCODER_MODE=local python server.py
 ```
 
-[http://localhost:8765](http://localhost:8765)를 연다. `--host 0.0.0.0`을 주면 LAN 등 원격 접속을 허용해 같은 포트로 서버를 시작한다. 첫 생성에서 모델과 텍스트 인코더를 내려받고 이후에는 서버에서 모델을 재사용한다. NVIDIA의 [Kimodo 빠른 시작](https://research.nvidia.com/labs/sil/projects/kimodo/docs/getting_started/quick_start.html)은 모델과 텍스트 인코더를 GPU에서 함께 실행할 때 약 17 GB의 VRAM이 필요하다고 안내한다. VRAM이 부족하면 서버 실행 전에 환경 변수 `TEXT_ENCODER_DEVICE`를 `cpu`로 설정해 텍스트 인코더를 CPU로 옮길 수 있다.
+### 프론트엔드
+
+```bash
+cd frontend
+npm ci
+npm run dev
+```
+
+개발 서버는 `http://localhost:5173`을 열고 `/api` 요청을 `http://127.0.0.1:8765`로 전달한다.
+
+배포할 때는 빌드 후 미리보기 서버를 쓴다. 백엔드와 origin이 다르므로 `VITE_API_BASE`로 API 주소를 지정한다.
+
+```bash
+VITE_API_BASE=http://localhost:8765 npm run build
+npm run preview
+```
+
+`VITE_API_BASE`를 주지 않고 빌드하면 같은 origin의 `/api`를 호출하는 상태로 빌드된다.
 
 ### Tailscale 원격 접속
 
-다른 기기에서 HTTPS로 쓸 때는 서버를 띄운 채로 `tailscale serve`만 추가한다. tailnet 안쪽에서만 접속되고 인터넷에 노출되지 않는다.
+백엔드와 프론트엔드 각각 `tailscale serve`를 연결한다. tailnet 안쪽에서만 접속되고 인터넷에 노출되지 않는다. 백엔드는 서버를 띄운 채로:
 
 ```bash
 tailscale serve --bg --https 8766 http://127.0.0.1:8765
 ```
 
-같은 tailnet의 기기에서 `https://<머신 이름>.<tailnet>.ts.net:8766`을 열면 된다. 중지는 `tailscale serve --https=8766 off`.
+프론트엔드는 `VITE_API_BASE`를 tailnet의 백엔드 주소로 빌드한 뒤:
+
+```bash
+cd frontend
+VITE_API_BASE=https://<머신 이름>.<tailnet>.ts.net:8766 npm run build
+npm run preview
+tailscale serve --bg --https 8443 http://127.0.0.1:5173
+```
+
+같은 tailnet의 기기에서 `https://<머신 이름>.<tailnet>.ts.net:8443`을 열면 된다. 백엔드는 기본적으로 모든 origin의 CORS 요청을 허용하고, `--cors-origin`으로 허용 origin을 제한할 수 있다. 중지는 `tailscale serve --https=<포트> off`.
 
 ## 사용
 
 1. 프롬프트와 길이를 입력하고 **모션 생성**을 누른다. 예를 들어 `A person takes two steps, plants both feet, and turns to the left.`처럼 한 테이크에 포함할 움직임을 적는다. 기존의 [Kimodo constraints.json](https://research.nvidia.com/labs/sil/projects/kimodo/docs/user_guide/constraints.html)이 있으면 함께 불러올 수 있다.
 2. **VRM 불러오기**로 로컬 파일을 연다. SOMA 골격과 VRM을 나란히 놓고 재생하거나 프레임을 직접 이동해 비교할 수 있다. 루트 이동을 끄면 미리보기에서 수평 이동을 고정하고 높이 변화는 유지한다. VRM은 브라우저에서만 읽으며 파일을 서버로 보내지 않는다.
-3. 다른 테이크를 선택하거나 **설정 불러오기**로 기존 프롬프트를 수정한다. 생성한 테이크는 기본적으로 `takes/`에 저장되며 재시작 후에도 목록에 표시된다. `--data-dir`로 저장 위치를 지정할 수 있다. 목록에서 테이크를 삭제하거나 화살표로 순서를 바꿀 수 있고, 순서는 서버에 저장된다.
+3. 다른 테이크를 선택하거나 **설정 불러오기**로 기존 프롬프트를 수정한다. 생성한 테이크는 기본적으로 `backend/takes/`에 저장되며 재시작 후에도 목록에 표시된다. `--data-dir`로 저장 위치를 지정할 수 있다. 목록에서 테이크를 삭제하거나 화살표로 순서를 바꿀 수 있고, 순서는 서버에 저장된다.
 
 ## 내보내기
 
@@ -89,9 +121,16 @@ JSON은 프레임을 재생하거나 다른 리그에 리타기팅하는 데 쓸
 
 ## 개발
 
-`python server.py`를 실행한 뒤 다른 터미널에서 `npm run dev`를 실행한다. Vite는 로컬 Python 서버의 기본 포트로 API 요청을 전달한다.
+백엔드와 프론트엔드를 각각 실행한다. 프론트엔드 개발 서버는 `/api`를 로컬 백엔드로 전달한다.
 
 ```bash
-npm test
-python -m unittest discover -s tests
+cd backend && python server.py
+cd frontend && npm run dev
+```
+
+테스트는 각 디렉터리에서 실행한다.
+
+```bash
+cd frontend && npm test
+cd backend && python -m unittest discover -s tests
 ```

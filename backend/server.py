@@ -1,4 +1,4 @@
-"""Serve the editor and serialize generation requests on the local GPU."""
+"""Serve the Kimodo Maker API on the local GPU."""
 
 import json
 import logging
@@ -9,10 +9,6 @@ import uuid
 from argparse import ArgumentParser
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from mimetypes import add_type, guess_type
-
-for extension in (".js", ".mjs"):
-    add_type("text/javascript", extension)
 
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
@@ -162,7 +158,7 @@ class TakeStore:
             update("failed", error=f"{type(error).__name__}: {error}"[:1200])
 
 
-def handler_for(store, static, allow_remote=False):
+def handler_for(store, allow_remote=False, cors_origin="*"):
     class Handler(BaseHTTPRequestHandler):
         def local_host(self):
             if allow_remote:
@@ -173,11 +169,20 @@ def handler_for(store, static, allow_remote=False):
             self.send_json({"error": "로컬 호스트에서 연결하세요."}, 403)
             return False
 
+        def apply_cors(self):
+            self.send_header("Access-Control-Allow-Origin", cors_origin)
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type")
+            self.send_header("Access-Control-Max-Age", "86400")
+            if cors_origin != "*":
+                self.send_header("Vary", "Origin")
+
         def send_json(self, data, status=200):
             payload = json.dumps(data, ensure_ascii=False).encode("utf-8")
             self.send_response(status)
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Cache-Control", "no-store")
+            self.apply_cors()
             self.send_header("Content-Length", str(len(payload)))
             self.end_headers()
             self.wfile.write(payload)
@@ -190,13 +195,20 @@ def handler_for(store, static, allow_remote=False):
                 return
             with handle:
                 self.send_response(200)
-                self.send_header("Content-Type", guess_type(path)[0] or "application/octet-stream")
+                self.send_header("Content-Type", "application/octet-stream")
                 self.send_header("Content-Length", str(path.stat().st_size))
                 self.send_header("X-Content-Type-Options", "nosniff")
+                self.apply_cors()
                 if attachment:
                     self.send_header("Content-Disposition", f'attachment; filename="{attachment}"')
                 self.end_headers()
                 shutil.copyfileobj(handle, self.wfile)
+
+        def do_OPTIONS(self):
+            self.send_response(204)
+            self.apply_cors()
+            self.send_header("Content-Length", "0")
+            self.end_headers()
 
         def do_GET(self):
             if not self.local_host():
@@ -222,14 +234,7 @@ def handler_for(store, static, allow_remote=False):
                             f"{take_id[:8]}-{filename}" if download else None,
                         )
                         return
-            if url.path.startswith("/api/"):
-                self.send_json({"error": "테이크나 파일을 찾을 수 없습니다."}, 404)
-                return
-            path = (static / (url.path.strip("/") or "index.html")).resolve()
-            if path.is_relative_to(static):
-                self.send_file(path)
-            else:
-                self.send_json({"error": "파일을 찾을 수 없습니다."}, 404)
+            self.send_json({"error": "테이크나 파일을 찾을 수 없습니다."}, 404)
 
         def read_json(self):
             size = int(self.headers.get("Content-Length", "0"))
@@ -319,15 +324,20 @@ def main():
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--data-dir", type=Path, default=ROOT / "takes")
+    parser.add_argument("--cors-origin", default="*", help="CORS 허용 origin(쉼표로 여러 개)")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO)
     allow_remote = args.host not in ("127.0.0.1", "localhost", "::1")
     if allow_remote:
         LOG.warning("host %s에 바인딩하여 원본 연결 제한을 해제합니다.", args.host)
+    origins = [origin.strip() for origin in args.cors_origin.split(",") if origin.strip()]
+    cors_origin = ", ".join(origins) if origins else "*"
+    if cors_origin != "*":
+        LOG.info("CORS 허용 origin: %s", cors_origin)
     store = TakeStore(args.data_dir.resolve(), KimodoEngine())
-    with ThreadingHTTPServer((args.host, args.port), handler_for(store, (ROOT / "dist").resolve(), allow_remote)) as server:
+    with ThreadingHTTPServer((args.host, args.port), handler_for(store, allow_remote, cors_origin)) as server:
         address = "localhost" if args.host == "0.0.0.0" else args.host
-        print(f"Kimodo Maker · http://{address}:{server.server_port}", flush=True)
+        print(f"Kimodo Maker API · http://{address}:{server.server_port}", flush=True)
         server.serve_forever()
 
 
