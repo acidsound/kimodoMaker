@@ -4,7 +4,38 @@
 
 ## 실행
 
-NVIDIA GPU가 연결된 Linux 또는 Ubuntu WSL2에서 실행한다. Node.js 22.12 이상과 Python 3.10 이상이 필요하다. Kimodo의 모션 후처리 모듈을 빌드할 때 C++ 컴파일러, CMake와 Eigen이 필요하다.
+NVIDIA GPU와 CUDA용 PyTorch, Node.js 22.12 이상, Python 3.10 이상이 필요하다. Kimodo의 모션 후처리 모듈은 C++ 컴파일러와 CMake로 빌드한다.
+
+### Windows 네이티브
+
+Kimodo의 빌드 스크립트에 Windows 경로가 있다. 아래는 Python 3.12와 Visual Studio 2022 기준이다. Visual Studio Build Tools의 **C++를 사용한 데스크톱 개발** 워크로드와 Windows SDK를 설치하고 PowerShell을 연다. 다른 Visual Studio 버전을 쓰면 `cmake --help`에 나온 해당 버전의 생성기 이름을 사용한다. CMake는 Eigen과 pybind11을 찾지 못하면 내려받는다.
+
+```powershell
+git clone https://github.com/acidsound/kimodoMaker.git
+cd kimodoMaker
+py -3.12 -m venv .venv
+$python = ".\.venv\Scripts\python.exe"
+& $python -m pip install torch==2.10.0 --index-url https://download.pytorch.org/whl/cu128
+& $python -c "import torch; assert torch.cuda.is_available(), 'CUDA is unavailable'; print(torch.cuda.get_device_name(0))"
+
+$env:CMAKE_GENERATOR = "Visual Studio 17 2022"
+& $python -m pip install -r requirements.txt
+& $python -c "from motion_correction import motion_postprocess; print('MotionCorrection OK')"
+```
+
+[Meta Llama 3 8B Instruct](https://huggingface.co/meta-llama/Meta-Llama-3-8B-Instruct) 접근 권한을 얻은 뒤 같은 PowerShell에서 실행한다.
+
+```powershell
+.\.venv\Scripts\hf.exe auth login
+npm.cmd ci
+npm.cmd run build
+$env:TEXT_ENCODER_MODE = "local"
+& $python server.py
+```
+
+Windows에서 GPU 추론까지 이어지는 전체 흐름은 아직 검증하지 않았다. 위 명령은 CUDA 인식 여부와 Kimodo 후처리 모듈 로드 여부를 확인한다.
+
+### Linux / Ubuntu WSL2
 
 ```bash
 git clone https://github.com/acidsound/kimodoMaker.git
@@ -26,7 +57,7 @@ npm run build
 TEXT_ENCODER_MODE=local python server.py
 ```
 
-[http://localhost:8765](http://localhost:8765)를 연다. 첫 생성에서 모델과 텍스트 인코더를 내려받고 이후에는 서버에서 모델을 재사용한다. NVIDIA의 [Kimodo 빠른 시작](https://research.nvidia.com/labs/sil/projects/kimodo/docs/getting_started/quick_start.html)은 모델과 텍스트 인코더를 GPU에서 함께 실행할 때 약 17 GB의 VRAM이 필요하다고 안내한다. VRAM이 부족하면 서버 실행 시 `TEXT_ENCODER_DEVICE=cpu`를 추가해 텍스트 인코더를 CPU로 옮길 수 있다.
+[http://localhost:8765](http://localhost:8765)를 연다. 첫 생성에서 모델과 텍스트 인코더를 내려받고 이후에는 서버에서 모델을 재사용한다. NVIDIA의 [Kimodo 빠른 시작](https://research.nvidia.com/labs/sil/projects/kimodo/docs/getting_started/quick_start.html)은 모델과 텍스트 인코더를 GPU에서 함께 실행할 때 약 17 GB의 VRAM이 필요하다고 안내한다. VRAM이 부족하면 서버 실행 전에 환경 변수 `TEXT_ENCODER_DEVICE`를 `cpu`로 설정해 텍스트 인코더를 CPU로 옮길 수 있다.
 
 ## 사용
 
