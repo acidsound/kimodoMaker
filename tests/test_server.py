@@ -65,6 +65,40 @@ class TakeStoreTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     validate_options(dict(self.options, **overrides))
 
+    def wait_ready(self, store, take):
+        for _ in range(100):
+            if store.get(take["id"])["status"] == "ready":
+                return
+            time.sleep(0.01)
+        raise AssertionError(f"Take {take['id']} did not finish")
+
+    def test_deletes_take_but_not_while_pending(self):
+        store = TakeStore(self.path, self.engine)
+        take = store.start(self.options)
+        with self.assertRaises(ValueError):
+            store.delete(take["id"])
+        self.engine.release.set()
+        self.wait_ready(store, take)
+        self.assertTrue(store.delete(take["id"]))
+        self.assertIsNone(store.get(take["id"]))
+        self.assertFalse((self.path / take["id"]).exists())
+        self.assertFalse(store.delete("missing"))
+
+    def test_reorder_persists_custom_order(self):
+        store = TakeStore(self.path, self.engine)
+        first = store.start(self.options)
+        self.engine.release.set()
+        self.wait_ready(store, first)
+        second = store.start(self.options)
+        self.wait_ready(store, second)
+        self.assertEqual([take["id"] for take in store.list()], [second["id"], first["id"]])
+        store.reorder([first["id"], second["id"]])
+        self.assertEqual([take["id"] for take in store.list()], [first["id"], second["id"]])
+        reloaded = TakeStore(self.path, self.engine)
+        self.assertEqual([take["id"] for take in reloaded.list()], [first["id"], second["id"]])
+        with self.assertRaises(ValueError):
+            store.reorder([first["id"]])
+
 
 if __name__ == "__main__":
     unittest.main()

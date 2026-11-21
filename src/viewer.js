@@ -129,6 +129,18 @@ export class Viewer {
     this.updateVisibility();
   }
 
+  clearMotion() {
+    this.motion = null;
+    this.frame = 0;
+    this.playing = false;
+    this.path.geometry.dispose();
+    this.path.geometry = new THREE.BufferGeometry();
+    this.bindVrm();
+    this.updateVisibility();
+    this.onFrame(0, false);
+    this.resetView();
+  }
+
   setMotion(motion) {
     this.motion = motion;
     this.frame = 0;

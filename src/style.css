@@ -67,7 +67,7 @@ button:disabled { opacity: .5; }
 .connection[data-state="offline"], .message[data-error="true"] { color: var(--error); }
 .workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 355px);
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 400px);
   gap: 16px;
   max-width: 1800px;
   margin: 0 auto;
@@ -151,9 +151,12 @@ textarea::placeholder, input::placeholder { color: #829390; }
 .file-name, .message { overflow-wrap: anywhere; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .controls > .message { margin-top: 8px; }
 .primary { width: 100%; min-height: 38px; font-weight: 700; background: var(--accent); color: #153228; }
-.take-list { max-height: 230px; overflow-y: auto; display: grid; gap: 5px; }
-.take-item { width: 100%; min-width: 0; text-align: left; padding: 7px 8px; }
-.take-item[aria-pressed="true"] { border-color: #86b8a5; background: #233830; }
+.take-list { max-height: 230px; overflow-y: auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 5px; }
+.take-item { display: flex; gap: 4px; align-items: center; min-width: 0; }
+.take-main { flex: 1; min-width: 0; text-align: left; padding: 7px 8px; }
+.take-main[aria-pressed="true"] { border-color: #86b8a5; background: #233830; }
+.take-move { padding: 7px 8px; }
+.take-delete { padding: 7px 8px; font-size: 12px; color: var(--error); }
 .take-title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .take-meta { display: block; color: var(--muted); font-size: 11px; margin-top: 3px; }
 .take-meta[data-error="true"] { color: var(--error); }

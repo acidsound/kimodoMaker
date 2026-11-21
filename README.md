@@ -8,12 +8,12 @@ NVIDIA GPU와 CUDA용 PyTorch, Node.js 22.12 이상, Python 3.10 이상이 필�
 
 ### Windows 네이티브
 
-Kimodo의 빌드 스크립트에 Windows 경로가 있다. 아래는 Python 3.12와 Visual Studio 2022 기준이다. Visual Studio Build Tools의 **C++를 사용한 데스크톱 개발** 워크로드와 Windows SDK를 설치하고 PowerShell을 연다. 다른 Visual Studio 버전을 쓰면 `cmake --help`에 나온 해당 버전의 생성기 이름을 사용한다. CMake는 Eigen과 pybind11을 찾지 못하면 내려받는다.
+Kimodo의 빌드 스크립트에 Windows 경로가 있다. 아래는 Python 3.10.11과 Visual Studio 2022 기준이다. Visual Studio Build Tools의 **C++를 사용한 데스크톱 개발** 워크로드와 Windows SDK를 설치하고 PowerShell을 연다. 다른 Visual Studio 버전을 쓰면 `cmake --help`에 나온 해당 버전의 생성기 이름을 사용한다. CMake는 Eigen과 pybind11을 찾지 못하면 내려받는다.
 
 ```powershell
 git clone https://github.com/acidsound/kimodoMaker.git
 cd kimodoMaker
-py -3.12 -m venv .venv
+py -3.10 -m venv .venv
 $python = ".\.venv\Scripts\python.exe"
 & $python -m pip install torch==2.10.0 --index-url https://download.pytorch.org/whl/cu128
 & $python -c "import torch; assert torch.cuda.is_available(), 'CUDA is unavailable'; print(torch.cuda.get_device_name(0))"
@@ -33,7 +33,7 @@ $env:TEXT_ENCODER_MODE = "local"
 & $python server.py
 ```
 
-Windows에서 GPU 추론까지 이어지는 전체 흐름은 아직 검증하지 않았다. 위 명령은 CUDA 인식 여부와 Kimodo 후처리 모듈 로드 여부를 확인한다.
+Windows 네이티브 환경(RTX 4090, torch 2.10.0+cu128, 로컬 LLM2Vec 텍스트 인코더)에서 모델 로드부터 모션 생성, 파일 내보내기까지 전체 흐름을 확인했다. Llama 3 8B 기반이라 모델 접근 권한은 필수이고 권한 승인 후에는 별도 설정 없이 내려받기가 진행된다.
 
 ### Linux / Ubuntu WSL2
 
@@ -57,13 +57,23 @@ npm run build
 TEXT_ENCODER_MODE=local python server.py
 ```
 
-[http://localhost:8765](http://localhost:8765)를 연다. 첫 생성에서 모델과 텍스트 인코더를 내려받고 이후에는 서버에서 모델을 재사용한다. NVIDIA의 [Kimodo 빠른 시작](https://research.nvidia.com/labs/sil/projects/kimodo/docs/getting_started/quick_start.html)은 모델과 텍스트 인코더를 GPU에서 함께 실행할 때 약 17 GB의 VRAM이 필요하다고 안내한다. VRAM이 부족하면 서버 실행 전에 환경 변수 `TEXT_ENCODER_DEVICE`를 `cpu`로 설정해 텍스트 인코더를 CPU로 옮길 수 있다.
+[http://localhost:8765](http://localhost:8765)를 연다. `--host 0.0.0.0`을 주면 LAN 등 원격 접속을 허용해 같은 포트로 서버를 시작한다. 첫 생성에서 모델과 텍스트 인코더를 내려받고 이후에는 서버에서 모델을 재사용한다. NVIDIA의 [Kimodo 빠른 시작](https://research.nvidia.com/labs/sil/projects/kimodo/docs/getting_started/quick_start.html)은 모델과 텍스트 인코더를 GPU에서 함께 실행할 때 약 17 GB의 VRAM이 필요하다고 안내한다. VRAM이 부족하면 서버 실행 전에 환경 변수 `TEXT_ENCODER_DEVICE`를 `cpu`로 설정해 텍스트 인코더를 CPU로 옮길 수 있다.
+
+### Tailscale 원격 접속
+
+다른 기기에서 HTTPS로 쓸 때는 서버를 띄운 채로 `tailscale serve`만 추가한다. tailnet 안쪽에서만 접속되고 인터넷에 노출되지 않는다.
+
+```bash
+tailscale serve --bg --https 8766 http://127.0.0.1:8765
+```
+
+같은 tailnet의 기기에서 `https://<머신 이름>.<tailnet>.ts.net:8766`을 열면 된다. 중지는 `tailscale serve --https=8766 off`.
 
 ## 사용
 
 1. 프롬프트와 길이를 입력하고 **모션 생성**을 누른다. 예를 들어 `A person takes two steps, plants both feet, and turns to the left.`처럼 한 테이크에 포함할 움직임을 적는다. 기존의 [Kimodo constraints.json](https://research.nvidia.com/labs/sil/projects/kimodo/docs/user_guide/constraints.html)이 있으면 함께 불러올 수 있다.
 2. **VRM 불러오기**로 로컬 파일을 연다. SOMA 골격과 VRM을 나란히 놓고 재생하거나 프레임을 직접 이동해 비교할 수 있다. 루트 이동을 끄면 미리보기에서 수평 이동을 고정하고 높이 변화는 유지한다. VRM은 브라우저에서만 읽으며 파일을 서버로 보내지 않는다.
-3. 다른 테이크를 선택하거나 **설정 불러오기**로 기존 프롬프트를 수정한다. 생성한 테이크는 기본적으로 `takes/`에 저장되며 재시작 후에도 목록에 표시된다. `--data-dir`로 저장 위치를 지정할 수 있다.
+3. 다른 테이크를 선택하거나 **설정 불러오기**로 기존 프롬프트를 수정한다. 생성한 테이크는 기본적으로 `takes/`에 저장되며 재시작 후에도 목록에 표시된다. `--data-dir`로 저장 위치를 지정할 수 있다. 목록에서 테이크를 삭제하거나 화살표로 순서를 바꿀 수 있고, 순서는 서버에 저장된다.
 
 ## 내보내기
 

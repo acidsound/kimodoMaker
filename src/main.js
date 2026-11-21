@@ -25,6 +25,9 @@ function message(node, value, error = false) {
   node.dataset.error = String(error);
 }
 
+const PENDING = ['queued', 'loading', 'generating', 'exporting'];
+const busy = (status) => PENDING.includes(status);
+
 function updateFrame(frame, playing) {
   el.timeline.value = Math.floor(frame);
   el.timecode.textContent = `${(frame / viewer.motion.fps).toFixed(2)} s`;
@@ -54,11 +57,13 @@ function updateGenerate() {
 
 function renderTakes() {
   el['take-count'].textContent = takes.length;
-  el['take-list'].replaceChildren(...takes.map((take) => {
+  el['take-list'].replaceChildren(...takes.map((take, index) => {
+    const row = document.createElement('div');
+    row.className = 'take-item';
+    row.dataset.takeId = take.id;
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = 'take-item';
-    button.dataset.takeId = take.id;
+    button.className = 'take-main';
     button.setAttribute('aria-pressed', String(take.id === selectedId));
     const title = document.createElement('span');
     title.className = 'take-title';
@@ -71,7 +76,31 @@ function renderTakes() {
     const status = take.status === 'ready' ? `${take.fps} fps` : text[take.status];
     meta.textContent = `${duration.toFixed(1)}초 · 시드 ${take.seed} · ${status}`;
     button.append(title, meta);
-    return button;
+    const move = (direction, label, disabled) => {
+      const node = document.createElement('button');
+      node.type = 'button';
+      node.className = 'take-move';
+      node.dataset.move = String(direction);
+      node.textContent = direction < 0 ? '↑' : '↓';
+      node.setAttribute('aria-label', label);
+      node.disabled = disabled;
+      return node;
+    };
+    const inactive = busy(take.status);
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'take-delete';
+    del.dataset.delete = 'true';
+    del.textContent = '삭제';
+    del.setAttribute('aria-label', '이 테이크 삭제');
+    del.disabled = inactive;
+    row.append(
+      button,
+      move(-1, '이전 순서로', index === 0 || inactive),
+      move(1, '다음 순서로', index === takes.length - 1 || inactive),
+      del,
+    );
+    return row;
   }));
   if (!takes.length) {
     const empty = document.createElement('p');
@@ -132,7 +161,7 @@ async function refresh() {
     el.connection.textContent = '서버 연결됨';
     const prior = pendingId;
     takes = updated;
-    pendingId = takes.find((take) => !['ready', 'failed'].includes(take.status))?.id;
+    pendingId = takes.find((take) => busy(take.status))?.id;
     if (pendingId) {
       nextPoll = 900;
       const pending = takes.find((take) => take.id === pendingId);
@@ -195,8 +224,65 @@ el['generate-form'].addEventListener('submit', async (event) => {
   }
 });
 
+function clearPreview() {
+  el['take-info'].textContent = '재생 중인 테이크 없음';
+  el.timeline.max = 0;
+  el.timeline.value = 0;
+  el.timeline.disabled = el.play.disabled = true;
+  el.timecode.textContent = '0.00 s';
+  if (viewer) viewer.clearMotion();
+  el['empty-stage'].hidden = Boolean(viewer?.vrm);
+  message(el['preview-status'], '');
+}
+
+async function deleteTake(id) {
+  const take = takes.find((entry) => entry.id === id);
+  if (!take || busy(take.status)) return;
+  if (!confirm('이 테이크를 삭제할까요?')) return;
+  try {
+    await api(takeUrl(id), { method: 'DELETE' });
+    if (selectedId === id) {
+      selectedId = undefined;
+      el['take-actions'].hidden = true;
+      clearPreview();
+    }
+    await refresh();
+  } catch (error) {
+    message(el['preview-status'], error.message, true);
+  }
+}
+
+async function moveTake(id, direction) {
+  const index = takes.findIndex((take) => take.id === id);
+  const target = index + direction;
+  if (index < 0 || target < 0 || target >= takes.length || busy(takes[index].status)) return;
+  [takes[index], takes[target]] = [takes[target], takes[index]];
+  renderTakes();
+  try {
+    await api('/api/takes/reorder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: takes.map((take) => take.id) }),
+    });
+  } catch (error) {
+    message(el['preview-status'], error.message, true);
+    await refresh();
+  }
+}
+
 el['take-list'].addEventListener('click', (event) => {
-  const id = event.target.closest('[data-take-id]')?.dataset.takeId;
+  const row = event.target.closest('[data-take-id]');
+  if (!row) return;
+  const id = row.dataset.takeId;
+  if (event.target.closest('[data-delete]')) {
+    deleteTake(id);
+    return;
+  }
+  const move = event.target.closest('[data-move]');
+  if (move) {
+    moveTake(id, Number(move.dataset.move));
+    return;
+  }
   const take = takes.find((entry) => entry.id === id);
   if (take) selectTake(take, true);
 });
