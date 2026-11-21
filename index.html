@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0e1418">
+    <title>Kimodo Maker</title>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark" aria-hidden="true">K</span><h1>Kimodo Maker</h1></div>
+      <div id="connection" class="connection" data-state="connecting" role="status">서버 연결 확인 중</div>
+    </header>
+    <main class="workspace">
+      <section class="stage panel" aria-label="3D 모션 미리보기">
+        <div class="panel-heading">
+          <h2>미리보기</h2>
+          <div class="stage-actions">
+            <label class="check"><input id="skeleton-visible" type="checkbox" checked> SOMA</label>
+            <label class="check"><input id="root-motion" type="checkbox" checked> 루트 이동</label>
+            <button id="reset-view" class="quiet" type="button">시점 초기화</button>
+          </div>
+        </div>
+        <div id="viewport">
+          <div id="empty-stage" class="stage-message">모션을 생성하거나 VRM을 불러오세요.</div>
+          <span id="avatar-name" class="avatar-name" hidden></span>
+        </div>
+        <div class="transport">
+          <button id="play" type="button" class="play" disabled>재생</button>
+          <input id="timeline" type="range" min="0" max="0" step="1" value="0" aria-label="재생 프레임" disabled>
+          <output id="timecode">0.00 s</output>
+          <select id="speed" aria-label="재생 속도">
+            <option value="0.25">0.25×</option><option value="0.5">0.5×</option>
+            <option value="1" selected>1×</option><option value="1.5">1.5×</option><option value="2">2×</option>
+          </select>
+        </div>
+        <div class="stage-footer">
+          <span id="take-info">재생 중인 테이크 없음</span>
+          <label class="check"><input id="loop" type="checkbox" checked> 반복</label>
+        </div>
+      </section>
+      <aside class="sidebar">
+        <section class="panel controls">
+          <div class="section-heading"><h2>모션 생성</h2><span class="model-label">SOMA RP v1.2</span></div>
+          <form id="generate-form">
+            <label for="prompt">프롬프트</label>
+            <textarea id="prompt" name="prompt" rows="4" maxlength="1000" required placeholder="A person takes two steps, plants both feet, and turns to the left."></textarea>
+            <div class="settings">
+              <label>길이 (초)<input id="duration" type="number" min="0.5" max="15" step="0.1" value="4" required></label>
+              <label>스텝<input id="steps" type="number" min="10" max="100" value="100" required></label>
+              <label>시드<input id="seed" type="number" min="0" max="4294967295" placeholder="무작위"></label>
+            </div>
+            <div class="file-row">
+              <label class="file-button">제약 JSON 불러오기<input id="constraints-file" type="file" accept=".json,application/json"></label>
+              <button id="clear-constraints" class="quiet" type="button" hidden>제거</button>
+            </div>
+            <span id="constraints-name" class="file-name" hidden></span>
+            <button id="generate" class="primary" type="submit" disabled>모션 생성</button>
+            <p id="generation-status" class="message" role="status" hidden></p>
+          </form>
+        </section>
+        <section class="panel controls">
+          <div class="section-heading"><h2>아바타</h2></div>
+          <div class="file-row">
+            <label class="file-button">VRM 불러오기<input id="vrm-file" type="file" accept=".vrm"></label>
+            <button id="clear-avatar" class="quiet" type="button" hidden>제거</button>
+          </div>
+          <p id="avatar-status" class="message" role="status" hidden></p>
+        </section>
+        <section class="panel controls takes">
+          <div class="section-heading"><h2>테이크</h2><span id="take-count" class="model-label">0</span></div>
+          <div id="take-list" class="take-list"></div>
+          <div id="take-actions" class="take-actions" hidden>
+            <button id="reuse" class="quiet" type="button">설정 불러오기</button>
+            <div id="exports" class="exports" aria-label="파일 내보내기"></div>
+          </div>
+          <p id="preview-status" class="message" role="status" hidden></p>
+        </section>
+      </aside>
+    </main>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
