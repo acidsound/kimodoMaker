@@ -63,6 +63,24 @@ Gate(m) ==
 3. 개발 세트를 전부 채점한다. en과 ko가 함께 무너지면 입력 포맷과 목표 벡터의 노름을 먼저 확인하고, 필요하면 투영층 용량을 늘린다. ko에서만 좌우·순서 오류가 늘면 번역과 대립쌍을 점검한다. 데이터와 어댑터 개선 후에도 구분이 약하면 텍스트 백본 부분 미세조정을 시도한다. 매 회차는 한 가설과 한 변경을 기록한다. 같은 조건의 ref 결과는 재사용한다.
 4. 개발 통과 시 체크포인트와 평가 코드를 동결한다. **최종 시험은 후보 하나에 한 번** 실시한다. 실패한 시험 결과로 v1을 다시 튜닝할 수 없다. 후속 연구를 하려면 새 시험 세트를 준비해 별도 실험 ID로 시작한다.
 
+### Colab T4 어댑터 학습 파일럿
+
+[Train_EmbeddingGemma2_Adapter_T4.ipynb](Train_EmbeddingGemma2_Adapter_T4.ipynb)의 기본 모드는 `train`이다. Colab 웹 UI에서 노트북을 열고 T4 런타임을 선택한 뒤, 아래 학습 입력 ZIP을 올리고 **모두 실행**을 한 번 누른다. 별도의 `smoke` 실행이나 MCP/CLI 연결은 필요 없다. `smoke`는 입력 없이 설치를 진단하는 선택 모드이며, 합성 교사로 만든 체크포인트는 모션 평가에 쓰지 않는다. 첫 실행에는 공개 EmbeddingGemma 2 체크포인트(약 1.5 GB)를 내려받지만, vision/audio 타워는 로드하지 않는다.
+
+T4에는 네이티브 BF16이 없고 [EmbeddingGemma 2 모델 카드](https://huggingface.co/google/embeddinggemma-2/blob/f9972ac22e696a105c482202646979e33e4b5a1e/README.md)는 FP16을 사용하지 말라고 명시한다. 따라서 이 노트북은 **FP32 파일럿**으로 격리된다. `MODE='train'`도 v1 BF16 결과로 간주하지 않는다. v1의 BF16을 그대로 유지하려면 4090의 별도 호환 환경에서 학생 특징을 BF16으로 캐시하고 T4에는 특징과 교사 벡터만 보내는 단계를 별도로 마련하거나, 정밀도 변경을 새 실험 프로토콜에 명시해야 한다. v1의 RTX 4090 지연/메모리 Gate와 앱 내보내기 시험은 Colab 수치로 대체하지 않는다.
+
+실제 파일럿에는 분할 누출 검사와 번역 검수를 마친 학습용 UTF-8 JSONL이 필요하다. 각 줄의 스키마는 `{"id":"clip-id","group_id":"clip-and-mirrors-group","split":"train","en":"Raise the left hand.","ko":"왼손을 든다."}`이다. 동일 원본·반전본·바꿔 쓴 문장·최소 대립쌍은 같은 `group_id`를 사용한다. 개발/시험 목록은 이 입력이나 Colab 환경에 넣지 않는다. BONES-SEED 접근 조건과 Colab 업로드가 허용되는지는 실제 자료를 사용하기 전에 확인한다.
+
+저장소 루트에서 기존 RTX 4090 Kimodo 백엔드 환경으로 교사 캐시를 준비한다. 첫 실행 시 고정 리비전의 Meta Llama 3 가중치 접근 권한이 필요하지만 캐시가 이미 있으면 로컬에서 처리할 수 있다.
+
+```powershell
+& .\backend\.venv\Scripts\python.exe .\docs\experiment\cache_llm2vec_teacher.py <학습-JSONL-경로> <새-출력-디렉터리>
+```
+
+출력에서 `kimodo-train-input.zip` 하나만 Colab의 `/content`에 올린다. ZIP에는 `train.jsonl`, `targets.npz`, `teacher.json`만 있다. 노트북은 학습 전에 파일 목록과 SHA-256, 학습 분할, 행 수·ID 일치, 교사 벡터 모양과 유한값, T4 연결을 검사한다. 검사를 통과하면 중간 확인 없이 임베딩 생성과 어댑터 학습을 진행한다. `targets.npz`의 교사 벡터는 노름 정규화 없이 저장하며, 같은 교사 벡터를 각 EN/KO 쌍에 적용한다.
+
+완료 후 Colab 파일 패널에서 `/content/kimodo-runs/t4-fp32-pilot-01/kimodo-result.zip` 하나를 내려받는다. ZIP에는 `adapter.safetensors`와 `run.json`이 들어 있다. 런타임이 도중에 종료되면 자동 재개하지 않으므로, 새 런타임에서 입력을 다시 올리고 실행한다. 이 파일럿은 모션 생성용 인코더 연결, 동결 평가 세트, 판정기 또는 v1 합격 판정을 아직 구현하지 않는다.
+
 ### 실행 비용과 증거
 
 - `peak[arm]`은 독점 사용한 4090 한 장에서 모델 로드 시작부터 마지막 요청 완료까지 20 ms 간격으로 기록한 장치 전체 사용 메모리의 최대값(MiB, 올림)이다. Kimodo와 별도 인코더 프로세스 양쪽이 포함된다. 공통 유휴 상태에서 조건별 프로세스를 새로 시작하고 정밀도·오프로딩 정책·다른 GPU 프로세스를 기록한다. 각 평가 세트에서 동일 순서로 세 조건을 실행한다.
